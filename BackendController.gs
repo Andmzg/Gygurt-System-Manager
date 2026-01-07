@@ -19,7 +19,7 @@ const SHEET_NAMES = {
   PAYMENTS: 'Payments'
 };
 
-const DOLAR_SHEET_ID = "1hOGX8I4yFEhVfVycV2uY8uMJxcme4vm-ZL0HN_caX0w"; // Tu hoja de tasas
+const DOLAR_SHEET_ID = "YOUR_SPREADSHEET_ID_HERE"; // Tu hoja de tasas
 
 /* ===============================================================
  * 1. ROUTER (Manejo de URL ?page=...)

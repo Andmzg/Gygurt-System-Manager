@@ -1,7 +1,7 @@
 /* PDFGenerator.gs - Handles PDF creation and Drive storage */
 
 // TU ID DE CARPETA (No lo cambies, ya funciona bien)
-const DRIVE_FOLDER_ID = "10gWatDQITPnLkqSwZAIrHqX8pAEprJqX"; 
+const DRIVE_FOLDER_ID = "YOUR_FOLDER_ID_HERE"; 
 
 function createDeliveryNote(orderData, newOrderId) {
   try {
