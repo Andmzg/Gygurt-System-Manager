@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gygurt New Order</title>
+    <style>
+      :root {
+        --primary: #8F0B13;
+        --secondary: #380F17;
+        --bg: #EFDFC5;
+        --white: #ffffff;
+      }
+      body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg); color: var(--secondary); margin: 0; padding: 20px; padding-bottom: 80px; }
+      .nav { text-align: center; margin-bottom: 20px; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
+      .nav a { text-decoration: none; color: #555; margin: 0 10px; font-weight: bold; }
+      .nav .active { color: var(--primary); border-bottom: 2px solid var(--primary); }
+      .container { max-width: 600px; margin: 0 auto; background: var(--white); padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+      h2 { color: var(--primary); border-bottom: 2px solid var(--primary); padding-bottom: 10px; margin-top: 0; }
+      h3 { font-size: 1.1em; background: #eee; padding: 8px; border-radius: 4px; margin: 20px 0 10px; }
+      .form-group { margin-bottom: 15px; }
+      label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.9em; }
+      select, textarea { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
+      select { background-color: white; }
+      .product-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+      .product-info { flex-grow: 1; padding-right: 10px; }
+      .product-name { font-weight: 600; font-size: 1em; display: block; }
+      .product-meta { font-size: 0.85em; color: #666; }
+      .counter-wrapper { display: flex; align-items: center; gap: 8px; }
+      .btn-counter { width: 36px; height: 36px; border-radius: 50%; border: none; background: var(--secondary); color: var(--bg); font-weight: bold; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+      .btn-counter:active { transform: scale(0.95); }
+      .qty-display { width: 40px; text-align: center; font-weight: bold; font-size: 1.1em; }
+      .footer-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--white); padding: 15px 20px; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; z-index: 100; }
+      .total-label { font-size: 0.9em; color: #666; }
+      .total-amount { font-size: 1.4em; font-weight: bold; color: var(--primary); }
+      button.btn-save { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1em; font-weight: bold; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+      button.btn-save:disabled { background: #ccc; cursor: not-allowed; }
+      #loading { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 200; justify-content: center; align-items: center; flex-direction: column; }
+      .spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+      @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <div id="loading"><div class="spinner"></div><p id="loading-text">Loading System...</p></div>
+    <div class="nav">
+      <a href="<?= ScriptApp.getService().getUrl() ?>">🏠 Home</a>
+      <span class="active">📝 New Order</span>
+      <a href="<?= ScriptApp.getService().getUrl() ?>?page=payments">💰 Payments</a>
+    </div>
+    <div class="container">
+      <h2>New Order (V2)</h2>
+      <div class="form-group">
+        <label>Customer:</label>
+        <select id="clientSelect" onchange="recalculateTotal()">
+          <option value="" disabled selected>Select a client...</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Notes:</label>
+        <textarea id="orderNotes" rows="2" placeholder="Delivery details, payment method..."></textarea>
+      </div>
+      <div id="productList"></div>
+    </div>
+    <div class="footer-bar">
+      <div><div class="total-label">Total Estimated</div><div class="total-amount" id="totalDisplay">$0.00</div></div>
+      <button class="btn-save" onclick="submitOrder()" id="btnSave">CONFIRM ORDER</button>
+    </div>
+
+    <script>
+      let CLIENTS = [];
+      let PRODUCTS = [];
+      let CART = {}; 
+
+      window.onload = function() {
+        toggleLoading(true);
+        google.script.run.withSuccessHandler(onDataLoaded).withFailureHandler(onError).getInitialData();
+      };
+
+      function onDataLoaded(data) {
+        if (!data.success) return onError(data.error);
+        CLIENTS = data.clients;
+        PRODUCTS = data.products;
+        const select = document.getElementById('clientSelect');
+        select.innerHTML = '<option value="" disabled selected>Select a client...</option>';
+        CLIENTS.forEach(client => {
+          const option = document.createElement('option');
+          option.value = client.id;
+          option.textContent = client.name + (client.type.includes('VIP') ? ' (VIP)' : '');
+          select.appendChild(option);
+        });
+        renderProducts();
+        toggleLoading(false);
+      }
+
+      function renderProducts() {
+        const container = document.getElementById('productList');
+        container.innerHTML = '';
+        const categories = [...new Set(PRODUCTS.map(p => p.category))];
+        categories.forEach(cat => {
+          const header = document.createElement('h3');
+          header.textContent = cat;
+          container.appendChild(header);
+          const catProducts = PRODUCTS.filter(p => p.category === cat);
+          catProducts.forEach(prod => {
+            const div = document.createElement('div');
+            div.className = 'product-item';
+            div.innerHTML = `
+              <div class="product-info"><span class="product-name">${prod.name}</span><span class="product-meta">${prod.presentation}</span></div>
+              <div class="counter-wrapper">
+                <button class="btn-counter" onclick="updateQty('${prod.sku}', -1)">-</button>
+                <div class="qty-display" id="qty-${prod.sku}">0</div>
+                <button class="btn-counter" onclick="updateQty('${prod.sku}', 1)">+</button>
+              </div>`;
+            container.appendChild(div);
+          });
+        });
+      }
+
+      function updateQty(sku, change) {
+        if (!CART[sku]) CART[sku] = 0;
+        CART[sku] += change;
+        if (CART[sku] < 0) CART[sku] = 0;
+        document.getElementById(`qty-${sku}`).textContent = CART[sku];
+        recalculateTotal();
+      }
+
+      function recalculateTotal() {
+        const clientId = document.getElementById('clientSelect').value;
+        const client = CLIENTS.find(c => c.id === clientId);
+        if (!client) { document.getElementById('totalDisplay').textContent = "$0.00"; return; }
+
+        let total = 0;
+
+        // PASO 1: Calcular la cantidad TOTAL de Yogures de 7oz en el carrito
+        let totalYogurt7ozCount = 0;
+        PRODUCTS.forEach(p => {
+            if (p.category === 'Yogurt' && p.presentation === '7oz') {
+                totalYogurt7ozCount += (CART[p.sku] || 0);
+            }
+        });
+
+        // PASO 2: Calcular precios usando ese Total Global
+        PRODUCTS.forEach(prod => {
+          const itemQty = CART[prod.sku] || 0;
+          if (itemQty > 0) {
+            let price = Number(prod.basePrice);
+
+            // Regla VIP
+            if (client.type.startsWith('VIP') && prod.category === 'Yogurt' && prod.presentation === '7oz' && client.specialPrice) {
+              price = Number(client.specialPrice);
+            }
+            // Regla Volumen (Usamos totalYogurt7ozCount para decidir el precio)
+            else if (prod.category === 'Yogurt' && prod.presentation === '7oz') {
+              if (totalYogurt7ozCount >= 8 && totalYogurt7ozCount < 24) price = 1.55;
+              if (totalYogurt7ozCount >= 24) price = 1.45;
+            }
+            total += (price * itemQty);
+          }
+        });
+        document.getElementById('totalDisplay').textContent = "$" + total.toFixed(2);
+      }
+
+      function submitOrder() {
+        const clientId = document.getElementById('clientSelect').value;
+        if (!clientId) return alert("Please select a customer.");
+        const client = CLIENTS.find(c => c.id === clientId);
+        const notes = document.getElementById('orderNotes').value;
+        const items = [];
+        for (const [sku, qty] of Object.entries(CART)) {
+          if (qty > 0) {
+            const prod = PRODUCTS.find(p => p.sku === sku);
+            items.push({ sku: sku, quantity: qty, category: prod.category, presentation: prod.presentation, basePrice: prod.basePrice, productData: prod });
+          }
+        }
+        if (items.length === 0) return alert("Cart is empty!");
+        toggleLoading(true, "Saving Order...");
+        const orderData = { client: client, items: items, notes: notes };
+        google.script.run.withSuccessHandler(onOrderSaved).withFailureHandler(onError).saveOrder(orderData);
+      }
+
+      function onOrderSaved(response) {
+        toggleLoading(false);
+        if (response.success) {
+          let msg = `✅ Order Created: #${response.orderId}\nTotal: $${response.total}`;
+          if (response.pdfUrl) {
+            msg += `\n\n📄 PDF Delivery Note generated. Open now?`;
+            if(confirm(msg)) { window.open(response.pdfUrl, '_blank'); }
+          } else { alert(msg); }
+          resetForm();
+        } else { alert("❌ Error: " + response.error); }
+      }
+
+      function resetForm() {
+        CART = {};
+        document.getElementById('clientSelect').value = "";
+        document.getElementById('orderNotes').value = "";
+        renderProducts();
+        document.getElementById('totalDisplay').textContent = "$0.00";
+      }
+
+      function onError(err) { toggleLoading(false); alert("System Error: " + err); }
+      function toggleLoading(show, text) {
+        const el = document.getElementById('loading');
+        const txt = document.getElementById('loading-text');
+        if (text) txt.textContent = text;
+        el.style.display = show ? 'flex' : 'none';
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gygurt System V2</title>
+  <style>
+    :root {
+      --primary: #8F0B13;
+      --secondary: #380F17;
+      --bg: #EFDFC5;
+      --white: #ffffff;
+    }
+    body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 90vh; }
+    
+    .container { width: 100%; max-width: 500px; text-align: center; }
+    
+    .logo-area { margin-bottom: 30px; }
+    .logo-area h1 { color: var(--primary); margin: 0; font-size: 2.5em; letter-spacing: -1px; }
+    .logo-area p { color: var(--secondary); margin: 5px 0 0; opacity: 0.8; font-weight: 500; }
+
+    .menu-grid { display: grid; grid-template-columns: 1fr; gap: 15px; }
+
+    .menu-card {
+      background: var(--white);
+      padding: 25px;
+      border-radius: 12px;
+      text-decoration: none;
+      color: var(--secondary);
+      box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+      transition: transform 0.2s, box-shadow 0.2s;
+      border-left: 6px solid var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .menu-card:hover { transform: translateY(-3px); box-shadow: 0 8px 15px rgba(0,0,0,0.1); }
+    
+    .icon { font-size: 2em; margin-right: 15px; }
+    .text { text-align: left; flex-grow: 1; }
+    .text h3 { margin: 0; font-size: 1.2em; color: var(--primary); }
+    .text span { font-size: 0.9em; color: #666; }
+    
+    .arrow { font-size: 1.5em; color: #ccc; }
+
+    /* Footer */
+    .footer { margin-top: 40px; font-size: 0.8em; color: var(--secondary); opacity: 0.5; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="logo-area">
+      <h1>GYGURT</h1>
+      <p>System Manager V2.1</p>
+    </div>
+
+    <div class="menu-grid">
+      <a href="<?= ScriptApp.getService().getUrl() ?>?page=form" class="menu-card">
+        <div class="icon">📝</div>
+        <div class="text">
+          <h3>Nuevo Pedido</h3>
+          <span>Registrar venta y calcular precios</span>
+        </div>
+        <div class="arrow">→</div>
+      </a>
+
+      <a href="<?= ScriptApp.getService().getUrl() ?>?page=payments" class="menu-card">
+        <div class="icon">💰</div>
+        <div class="text">
+          <h3>Cobranza</h3>
+          <span>Ver deudas y registrar pagos</span>
+        </div>
+        <div class="arrow">→</div>
+      </a>
+      
+      </div>
+
+    <div class="footer">
+      Engineered for Efficiency 🚀
+    </div>
+  </div>
+
+</body>
+</html>

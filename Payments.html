@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terminal de Cobranza</title>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #EFDFC5; color: #380F17; }
+    .nav { margin-bottom: 20px; text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
+    .nav a { text-decoration: none; color: #555; margin: 0 10px; font-weight: bold; }
+    
+    /* Buscador */
+    #searchBox { width: 100%; padding: 12px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #ccc; font-size: 16px; box-sizing: border-box; }
+
+    /* Tarjetas de Deuda */
+    .card { background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 5px solid #8F0B13; display: flex; justify-content: space-between; align-items: center; }
+    .client-info strong { font-size: 1.1em; }
+    .debt-info { text-align: right; }
+    .balance { color: #d32f2f; font-weight: bold; font-size: 1.3em; }
+    .btn-cobrar { background: #8F0B13; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-weight:bold; margin-top: 5px;}
+
+    /* MODAL INTELIGENTE */
+    #payModal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); justify-content:center; align-items:center; z-index: 1000; }
+    .modal-content { background:white; padding:20px; border-radius:10px; width:95%; max-width:400px; max-height: 90vh; overflow-y: auto; }
+    
+    .form-row { display: flex; gap: 10px; }
+    .form-group { flex: 1; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; margin-top: 10px; }
+    input, select { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #ccc; box-sizing: border-box; font-size: 16px; }
+    
+    .rate-info { font-size: 0.85em; color: #666; margin-top: -5px; margin-bottom: 10px; }
+    #rate-val { font-weight: bold; color: #00A99D; }
+    
+    .btn-action { width: 100%; padding: 12px; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 15px; }
+    .btn-confirm { background: #00A99D; color: white; }
+    .btn-cancel { background: #ccc; color: #333; margin-top: 10px; }
+  </style>
+</head>
+<body>
+
+  <div class="nav">
+    <a href="<?= ScriptApp.getService().getUrl() ?>">🏠 Inicio</a>
+    <a href="<?= ScriptApp.getService().getUrl() ?>?page=form">📝 Pedidos</a>
+    <span style="color:#8F0B13; border-bottom:2px solid #8F0B13;">💰 Cobranza</span>
+  </div>
+
+  <input type="text" id="searchBox" placeholder="🔍 Buscar Cliente..." onkeyup="buscarDeudas()">
+  <div id="listaResultados">Cargando cuentas por cobrar...</div>
+
+  <div id="payModal">
+    <div class="modal-content">
+      <h3 style="margin-top:0; color:#8F0B13">Cobrar Orden #<span id="mId"></span></h3>
+      
+      <div style="background:#eee; padding:10px; border-radius:5px; text-align:center;">
+        Deuda Total: <span class="balance">$<span id="mBal"></span></span>
+      </div>
+
+      <label>Fecha de Pago:</label>
+      <input type="date" id="mDate" onchange="fetchRate()">
+      
+      <div class="rate-info">
+        Tasa BCV: <span id="rate-val">---</span> Bs/$ 
+        <span id="rate-loading" style="display:none">🔄</span>
+        <input type="hidden" id="mRateHidden">
+      </div>
+
+      <label>Método:</label>
+      <select id="mMethod" onchange="checkMethod()">
+        <option value="Pago Movil">Pago Móvil (Bs)</option>
+        <option value="Transferencia">Transferencia (Bs)</option>
+        <option value="Efectivo Bs">Efectivo (Bs)</option>
+        <option value="Zelle">Zelle ($)</option>
+        <option value="Efectivo $">Efectivo ($)</option>
+        <option value="Binance">Binance ($)</option>
+      </select>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Monto Bs:</label>
+          <input type="number" id="mAmountBs" placeholder="0.00" step="0.01" oninput="calcUSD()">
+        </div>
+        <div class="form-group">
+          <label style="color:#00A99D">Monto $:</label>
+          <input type="number" id="mAmountUsd" placeholder="0.00" step="0.01">
+        </div>
+      </div>
+
+      <label>Referencia:</label>
+      <input type="text" id="mRef" placeholder="Ej: 123456">
+
+      <button class="btn-action btn-confirm" onclick="enviarPago()">REGISTRAR PAGO</button>
+      <button class="btn-action btn-cancel" onclick="cerrarModal()">Cancelar</button>
+    </div>
+  </div>
+
+  <script>
+    let ordenActual = null;
+
+    window.onload = function() { buscarDeudas(); };
+
+    function buscarDeudas() {
+      const q = document.getElementById('searchBox').value;
+      google.script.run.withSuccessHandler(pintarLista).getPendingOrders(q);
+    }
+
+    function pintarLista(ordenes) {
+      const div = document.getElementById('listaResultados');
+      div.innerHTML = "";
+      
+      if (!ordenes || ordenes.length === 0) {
+        div.innerHTML = "<p style='text-align:center; color:#999; margin-top:30px'>🎉 No hay deudas pendientes</p>";
+        return;
+      }
+
+      ordenes.forEach(o => {
+        const item = document.createElement('div');
+        item.className = 'card';
+        item.innerHTML = `
+          <div class="client-info">
+            <strong>${o.client}</strong><br>
+            <small style="color:#666">#${o.orderId} • ${o.date}</small>
+          </div>
+          <div class="debt-info">
+            <div class="balance">$${Number(o.balance).toFixed(2)}</div>
+            <button class="btn-cobrar" onclick="abrirModal('${o.orderId}', ${o.balance})">COBRAR</button>
+          </div>
+        `;
+        div.appendChild(item);
+      });
+    }
+
+    function abrirModal(id, saldo) {
+      ordenActual = id;
+      document.getElementById('mId').textContent = id;
+      document.getElementById('mBal').textContent = Number(saldo).toFixed(2);
+      
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('mDate').value = today;
+      
+      document.getElementById('mMethod').value = "Pago Movil";
+      document.getElementById('mAmountUsd').value = Number(saldo).toFixed(2);
+      document.getElementById('mAmountBs').value = "";
+      document.getElementById('mRef').value = "";
+      
+      document.getElementById('payModal').style.display = 'flex';
+      
+      fetchRate();
+      checkMethod();
+    }
+
+    function cerrarModal() {
+      document.getElementById('payModal').style.display = 'none';
+    }
+
+    function fetchRate() {
+      const date = document.getElementById('mDate').value;
+      document.getElementById('rate-loading').style.display = 'inline';
+      
+      google.script.run.withSuccessHandler(res => {
+        document.getElementById('rate-loading').style.display = 'none';
+        if(res.success) {
+          document.getElementById('rate-val').textContent = res.rate;
+          document.getElementById('mRateHidden').value = res.rate;
+          calcUSD(); 
+        } else {
+          document.getElementById('rate-val').textContent = "Error";
+          alert(res.error);
+        }
+      }).getExchangeRate(date);
+    }
+
+    function calcUSD() {
+      const bs = parseFloat(document.getElementById('mAmountBs').value) || 0;
+      const rate = parseFloat(document.getElementById('mRateHidden').value) || 1;
+      const method = document.getElementById('mMethod').value;
+      
+      if (!method.includes("Zelle") && !method.includes("Efectivo $") && !method.includes("Binance")) {
+         if (bs > 0) {
+           const usd = bs / rate;
+           document.getElementById('mAmountUsd').value = usd.toFixed(2);
+         }
+      }
+    }
+
+    function checkMethod() {
+      const method = document.getElementById('mMethod').value;
+      const bsInput = document.getElementById('mAmountBs');
+      const usdInput = document.getElementById('mAmountUsd');
+
+      if(method.includes("Zelle") || method.includes("Efectivo $") || method.includes("Binance")) {
+        bsInput.value = "";
+        bsInput.placeholder = "N/A";
+        bsInput.disabled = true;
+        usdInput.readOnly = false; 
+      } else {
+        bsInput.disabled = false;
+        bsInput.placeholder = "0.00";
+        usdInput.readOnly = true; 
+      }
+    }
+
+    function enviarPago() {
+      const usd = document.getElementById('mAmountUsd').value;
+      if(!usd || parseFloat(usd) <= 0) return alert("Monto inválido");
+
+      const btn = document.querySelector('.btn-confirm');
+      const originalText = btn.textContent;
+      btn.textContent = "Guardando...";
+      btn.disabled = true;
+
+      const paymentData = {
+        orderId: ordenActual,
+        date: document.getElementById('mDate').value,
+        amountUsd: usd,
+        amountBs: document.getElementById('mAmountBs').value || 0,
+        rate: document.getElementById('mRateHidden').value || 1,
+        method: document.getElementById('mMethod').value,
+        ref: document.getElementById('mRef').value || "S/R"
+      };
+
+      google.script.run.withSuccessHandler(res => {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        if(res.success) {
+          alert("✅ Pago registrado!");
+          cerrarModal();
+          buscarDeudas(); 
+        } else {
+          alert("Error: " + res.error);
+        }
+      }).savePayment(paymentData);
+    }
+  </script>
+</body>
+</html>

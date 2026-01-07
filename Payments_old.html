@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terminal de Cobranza</title>
+  <style>
+    /* ... (Mantén tus estilos CSS anteriores igual) ... */
+    body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #EFDFC5; color: #380F17; }
+    .card { background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 5px solid #8F0B13; }
+    .btn { background: #8F0B13; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; width: 100%; font-weight:bold; font-size:16px;}
+    input, select { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 6px; border: 1px solid #ccc; box-sizing: border-box; font-size: 16px; }
+    .balance { color: #d32f2f; font-weight: bold; font-size: 1.2em; }
+    .nav { margin-bottom: 20px; text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
+    .nav a { text-decoration: none; color: #555; margin: 0 10px; font-weight: bold; }
+    
+    /* Modal mejorado */
+    #payModal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); justify-content:center; align-items:center; z-index: 1000; }
+    .modal-content { background:white; padding:20px; border-radius:10px; width:95%; max-width:400px; max-height: 90vh; overflow-y: auto; }
+    .form-row { display: flex; gap: 10px; }
+    .form-group { flex: 1; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+
+  <div class="nav">
+    <a href="<?= ScriptApp.getService().getUrl() ?>">🏠 Inicio</a>
+    <a href="<?= ScriptApp.getService().getUrl() ?>?page=form">📝 Pedidos</a>
+    <span style="color:#8F0B13; border-bottom:2px solid #8F0B13;">💰 Cobranza</span>
+  </div>
+
+  <input type="text" id="searchBox" placeholder="🔍 Buscar Cliente (ej. BOLT)..." onkeyup="buscarDeudas()">
+  <div id="listaResultados">Cargando...</div>
+
+  <div id="payModal">
+    <div class="modal-content">
+      <h3 style="margin-top:0; color:#8F0B13">Registrar Pago #<span id="mId"></span></h3>
+      <div style="background:#eee; padding:10px; border-radius:5px; margin-bottom:15px; text-align:center;">
+        Deuda Pendiente: <span class="balance">$<span id="mBal"></span></span>
+      </div>
+      
+      <label>Fecha del Pago:</label>
+      <input type="date" id="mDate">
+
+      <label>Método de Pago:</label>
+      <select id="mMethod">
+        <option value="Transferencia - Banco Mercantil">Transferencia - Banco Mercantil</option>
+        <option value="Pago Movil">Pago Móvil</option>
+        <option value="Efectivo $$">Efectivo ($ Dólares)</option>
+        <option value="Efectivo Bs">Efectivo (Bs Bolívares)</option>
+        <option value="Zelle">Zelle</option>
+        <option value="Binance/Cripto">Binance / Cripto</option>
+        <option value="Otro">Otro</option>
+      </select>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Monto en Bs:</label>
+          <input type="number" id="mAmountBs" placeholder="0.00" step="0.01">
+        </div>
+        <div class="form-group">
+          <label style="color:#8F0B13">Equivalente ($):</label>
+          <input type="number" id="mAmountUsd" placeholder="0.00" step="0.01">
+        </div>
+      </div>
+
+      <label>Referencia / Detalle:</label>
+      <input type="text" id="mRef" placeholder="Ej: 123456 o Nombre quien entrega">
+      
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <button class="btn" onclick="enviarPago()">REGISTRAR</button>
+        <button class="btn" style="background:#ccc; color:#333" onclick="cerrarModal()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let ordenActual = null;
+
+    window.onload = function() { 
+      buscarDeudas(); 
+    };
+
+    function buscarDeudas() {
+      const q = document.getElementById('searchBox').value;
+      google.script.run.withSuccessHandler(pintarLista).getPendingOrders(q);
+    }
+
+    function pintarLista(ordenes) {
+      const div = document.getElementById('listaResultados');
+      div.innerHTML = "";
+      
+      if (ordenes.length === 0) {
+        div.innerHTML = "<p style='text-align:center; color:#666; margin-top:20px'>No hay deudas pendientes 👍</p>";
+        return;
+      }
+
+      ordenes.forEach(o => {
+        const item = document.createElement('div');
+        item.className = 'card';
+        item.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center">
+            <div>
+              <strong>${o.client}</strong><br>
+              <small style="color:#666">Pedido #${o.orderId} • ${o.date}</small>
+            </div>
+            <div style="text-align:right">
+              <div class="balance">$${o.balance.toFixed(2)}</div>
+              <small style="color:#999">Total: $${o.total}</small>
+            </div>
+          </div>
+          <button style="margin-top:10px; background:#380F17; padding:8px;" class="btn" onclick="abrirModal('${o.orderId}', ${o.balance})">COBRAR</button>
+        `;
+        div.appendChild(item);
+      });
+    }
+
+    function abrirModal(id, saldo) {
+      ordenActual = id;
+      
+      // Resetear campos
+      document.getElementById('mId').textContent = id;
+      document.getElementById('mBal').textContent = saldo.toFixed(2);
+      
+      // Fecha por defecto: HOY
+      document.getElementById('mDate').valueAsDate = new Date();
+      
+      // Sugerir monto completo en dólares
+      document.getElementById('mAmountUsd').value = saldo.toFixed(2);
+      document.getElementById('mAmountBs').value = ""; 
+      document.getElementById('mRef').value = "";
+      
+      document.getElementById('payModal').style.display = 'flex';
+    }
+
+    function cerrarModal() {
+      document.getElementById('payModal').style.display = 'none';
+    }
+
+    function enviarPago() {
+      // Validaciones
+      const date = document.getElementById('mDate').value;
+      const method = document.getElementById('mMethod').value;
+      const amountUsd = document.getElementById('mAmountUsd').value;
+      const amountBs = document.getElementById('mAmountBs').value || 0; // Si está vacío es 0
+      const ref = document.getElementById('mRef').value;
+      
+      if (!date || !amountUsd || !ref) {
+        return alert("⚠️ Por favor completa: Fecha, Equivalente ($) y Referencia.");
+      }
+
+      const datos = {
+        orderId: ordenActual,
+        date: date,
+        method: method,
+        amountUsd: amountUsd,
+        amountBs: amountBs,
+        reference: ref
+      };
+
+      const btn = document.querySelector('#payModal button.btn');
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Guardando...";
+
+      google.script.run.withSuccessHandler(res => {
+        if (res.success) {
+          alert("✅ Pago registrado correctamente.\nNuevo Saldo: $" + res.newBalance);
+          cerrarModal();
+          buscarDeudas(); 
+        } else {
+          alert("❌ Error: " + res.error);
+        }
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }).registerPayment(datos);
+    }
+  </script>
+</body>
+</html>
